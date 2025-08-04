@@ -1,17 +1,39 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"log"
 	"os"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/user/invoicer/backup"
 	"github.com/user/invoicer/config"
 	"github.com/user/invoicer/storage"
 	"github.com/user/invoicer/ui"
 )
 
 func main() {
+	var (
+		backupFlag  = flag.Bool("backup", false, "Create a backup of all data")
+		backupPath  = flag.String("backup-path", "", "Path to save backup (optional)")
+		restoreFlag = flag.String("restore", "", "Restore from a backup file")
+	)
+	flag.Parse()
+
+	if *backupFlag {
+		if err := backup.CreateBackup(*backupPath); err != nil {
+			log.Fatal("Backup failed:", err)
+		}
+		os.Exit(0)
+	}
+
+	if *restoreFlag != "" {
+		if err := backup.RestoreBackup(*restoreFlag); err != nil {
+			log.Fatal("Restore failed:", err)
+		}
+		os.Exit(0)
+	}
 	// Load configuration
 	cfg, err := config.Load()
 	if err != nil {
