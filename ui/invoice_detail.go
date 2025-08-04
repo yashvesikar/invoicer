@@ -215,6 +215,14 @@ func (m InvoiceDetailModel) viewDetail() string {
 		formLabelStyle.Render("Due Date:") + " " + m.invoice.DueDate.Format("January 2, 2006"),
 	}
 	
+	// Add service period if available
+	if m.invoice.ServiceStartDate != nil && m.invoice.ServiceEndDate != nil {
+		servicePeriod := fmt.Sprintf("%s - %s", 
+			m.invoice.ServiceStartDate.Format("Jan 2, 2006"),
+			m.invoice.ServiceEndDate.Format("Jan 2, 2006"))
+		leftCol = append(leftCol, formLabelStyle.Render("Service Period:") + " " + servicePeriod)
+	}
+	
 	statusStyle := normalStyle
 	switch m.invoice.Status {
 	case models.StatusDraft:
@@ -233,8 +241,26 @@ func (m InvoiceDetailModel) viewDetail() string {
 		"",
 	}
 	
-	for i := 0; i < 3; i++ {
-		row := leftColStyle.Render(leftCol[i]) + rightColStyle.Render(rightCol[i])
+	// Add empty entry if service period exists to align with left column
+	if m.invoice.ServiceStartDate != nil && m.invoice.ServiceEndDate != nil {
+		rightCol = append(rightCol, "")
+	}
+	
+	numRows := len(leftCol)
+	if len(rightCol) < numRows {
+		numRows = len(rightCol)
+	}
+	
+	for i := 0; i < numRows; i++ {
+		left := ""
+		right := ""
+		if i < len(leftCol) {
+			left = leftCol[i]
+		}
+		if i < len(rightCol) {
+			right = rightCol[i]
+		}
+		row := leftColStyle.Render(left) + rightColStyle.Render(right)
 		s.WriteString(row + "\n")
 	}
 	
@@ -367,7 +393,7 @@ func (m InvoiceDetailModel) viewDetail() string {
 		}
 	}
 	
-	s.WriteString("\n" + helpStyle.Render("e edit • s change status • p export PDF • esc back • q quit"))
+	s.WriteString("\n" + helpStyle.Render("e edit invoice • s change status • p export PDF • esc back • q quit"))
 	
 	return appStyle.Render(s.String())
 }

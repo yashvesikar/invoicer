@@ -40,43 +40,51 @@ func (li *LineItem) UpdateTotal() {
 }
 
 type Invoice struct {
-	ID           string          `json:"id"`
-	Number       string          `json:"number"`
-	ClientID     string          `json:"client_id"`
-	ClientName   string          `json:"client_name"`
-	Date         time.Time       `json:"date"`
-	DueDate      time.Time       `json:"due_date"`
-	LineItems    []LineItem      `json:"line_items"`
-	Subtotal     decimal.Decimal `json:"subtotal"`
-	DiscountRate decimal.Decimal `json:"discount_rate"`
-	Discount     decimal.Decimal `json:"discount"`
-	TaxRate      decimal.Decimal `json:"tax_rate"`
-	Tax          decimal.Decimal `json:"tax"`
-	Total        decimal.Decimal `json:"total"`
-	Status       InvoiceStatus   `json:"status"`
-	CreatedAt    time.Time       `json:"created_at"`
-	UpdatedAt    time.Time       `json:"updated_at"`
+	ID               string          `json:"id"`
+	Number           string          `json:"number"`
+	ClientID         string          `json:"client_id"`
+	ClientName       string          `json:"client_name"`
+	Date             time.Time       `json:"date"`
+	DueDate          time.Time       `json:"due_date"`
+	ServiceStartDate *time.Time      `json:"service_start_date,omitempty"`
+	ServiceEndDate   *time.Time      `json:"service_end_date,omitempty"`
+	LineItems        []LineItem      `json:"line_items"`
+	Subtotal         decimal.Decimal `json:"subtotal"`
+	DiscountRate     decimal.Decimal `json:"discount_rate"`
+	Discount         decimal.Decimal `json:"discount"`
+	TaxRate          decimal.Decimal `json:"tax_rate"`
+	Tax              decimal.Decimal `json:"tax"`
+	Total            decimal.Decimal `json:"total"`
+	Status           InvoiceStatus   `json:"status"`
+	CreatedAt        time.Time       `json:"created_at"`
+	UpdatedAt        time.Time       `json:"updated_at"`
 }
 
 func NewInvoice(clientID, clientName, number string) *Invoice {
 	now := time.Now()
+	// Default service period: start from beginning of current month, end at end of month
+	startOfMonth := time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, now.Location())
+	endOfMonth := startOfMonth.AddDate(0, 1, -1)
+	
 	return &Invoice{
-		ID:           uuid.New().String(),
-		Number:       number,
-		ClientID:     clientID,
-		ClientName:   clientName,
-		Date:         now,
-		DueDate:      now.AddDate(0, 0, 30),
-		LineItems:    []LineItem{},
-		Subtotal:     decimal.Zero,
-		DiscountRate: decimal.Zero,
-		Discount:     decimal.Zero,
-		TaxRate:      decimal.Zero,
-		Tax:          decimal.Zero,
-		Total:        decimal.Zero,
-		Status:       StatusDraft,
-		CreatedAt:    now,
-		UpdatedAt:    now,
+		ID:               uuid.New().String(),
+		Number:           number,
+		ClientID:         clientID,
+		ClientName:       clientName,
+		Date:             now,
+		DueDate:          now.AddDate(0, 0, 30),
+		ServiceStartDate: &startOfMonth,
+		ServiceEndDate:   &endOfMonth,
+		LineItems:        []LineItem{},
+		Subtotal:         decimal.Zero,
+		DiscountRate:     decimal.Zero,
+		Discount:         decimal.Zero,
+		TaxRate:          decimal.Zero,
+		Tax:              decimal.Zero,
+		Total:            decimal.Zero,
+		Status:           StatusDraft,
+		CreatedAt:        now,
+		UpdatedAt:        now,
 	}
 }
 

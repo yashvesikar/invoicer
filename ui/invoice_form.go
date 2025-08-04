@@ -20,6 +20,7 @@ const (
 	invoiceFormModeSelectClient
 	invoiceFormModeEditLineItems
 	invoiceFormModeAddLineItem
+	invoiceFormModeEditLineItem
 )
 
 type InvoiceFormModel struct {
@@ -35,12 +36,15 @@ type InvoiceFormModel struct {
 	discountInput      textinput.Model
 	taxInput           textinput.Model
 	dueDaysInput       textinput.Model
+	serviceStartInput  textinput.Model
+	serviceEndInput    textinput.Model
 	basicInputs        []textinput.Model
 	basicFocusIndex    int
 	
 	lineItemInputs     []textinput.Model
 	lineItemFocusIndex int
 	lineItemCursor     int
+	editingLineItemID  string
 	
 	err                error
 }
@@ -58,16 +62,26 @@ func NewInvoiceFormModel(storage models.Storage, cfg *config.Config, invoice *mo
 	dueDaysInput.Placeholder = "30"
 	dueDaysInput.Width = 10
 	
+	serviceStartInput := textinput.New()
+	serviceStartInput.Placeholder = "YYYY-MM-DD"
+	serviceStartInput.Width = 15
+	
+	serviceEndInput := textinput.New()
+	serviceEndInput.Placeholder = "YYYY-MM-DD"
+	serviceEndInput.Width = 15
+	
 	m := InvoiceFormModel{
-		storage:       storage,
-		config:        cfg,
-		invoice:       invoice,
-		isEdit:        invoice != nil,
-		mode:          invoiceFormModeEditBasic,
-		discountInput: discountInput,
-		taxInput:      taxInput,
-		dueDaysInput:  dueDaysInput,
-		basicInputs:   []textinput.Model{discountInput, taxInput, dueDaysInput},
+		storage:           storage,
+		config:            cfg,
+		invoice:           invoice,
+		isEdit:            invoice != nil,
+		mode:              invoiceFormModeEditBasic,
+		discountInput:     discountInput,
+		taxInput:          taxInput,
+		dueDaysInput:      dueDaysInput,
+		serviceStartInput: serviceStartInput,
+		serviceEndInput:   serviceEndInput,
+		basicInputs:       []textinput.Model{discountInput, taxInput, dueDaysInput, serviceStartInput, serviceEndInput},
 	}
 	
 	if m.isEdit {
@@ -76,6 +90,13 @@ func NewInvoiceFormModel(storage models.Storage, cfg *config.Config, invoice *mo
 		
 		dueDays := int(invoice.DueDate.Sub(invoice.Date).Hours() / 24)
 		m.dueDaysInput.SetValue(fmt.Sprintf("%d", dueDays))
+		
+		if invoice.ServiceStartDate != nil {
+			m.serviceStartInput.SetValue(invoice.ServiceStartDate.Format("2006-01-02"))
+		}
+		if invoice.ServiceEndDate != nil {
+			m.serviceEndInput.SetValue(invoice.ServiceEndDate.Format("2006-01-02"))
+		}
 	} else {
 		clients, _ := storage.GetAllClients()
 		m.clients = clients
@@ -86,6 +107,13 @@ func NewInvoiceFormModel(storage models.Storage, cfg *config.Config, invoice *mo
 		
 		if len(clients) > 0 {
 			m.invoice = models.NewInvoice(clients[0].ID, clients[0].Name, number)
+			// Set default service dates in the inputs
+			if m.invoice.ServiceStartDate != nil {
+				m.serviceStartInput.SetValue(m.invoice.ServiceStartDate.Format("2006-01-02"))
+			}
+			if m.invoice.ServiceEndDate != nil {
+				m.serviceEndInput.SetValue(m.invoice.ServiceEndDate.Format("2006-01-02"))
+			}
 		}
 	}
 	
@@ -110,6 +138,33 @@ func (m *InvoiceFormModel) setupLineItemInputs() {
 	m.lineItemInputs = []textinput.Model{descInput, qtyInput, priceInput}
 }
 
+func (m *InvoiceFormModel) setupEditLineItemInputs(index int) {
+	if index >= len(m.invoice.LineItems) {
+		return
+	}
+	
+	item := m.invoice.LineItems[index]
+	
+	descInput := textinput.New()
+	descInput.Placeholder = "Description"
+	descInput.Width = 40
+	descInput.SetValue(item.Description)
+	descInput.Focus()
+	
+	qtyInput := textinput.New()
+	qtyInput.Placeholder = "1"
+	qtyInput.Width = 10
+	qtyInput.SetValue(fmt.Sprintf("%.2f", item.Quantity.InexactFloat64()))
+	
+	priceInput := textinput.New()
+	priceInput.Placeholder = "0.00"
+	priceInput.Width = 10
+	priceInput.SetValue(fmt.Sprintf("%.2f", item.UnitPrice.InexactFloat64()))
+	
+	m.lineItemInputs = []textinput.Model{descInput, qtyInput, priceInput}
+	m.lineItemFocusIndex = 0
+}
+
 func (m InvoiceFormModel) Init() tea.Cmd {
 	if m.mode == invoiceFormModeEditBasic {
 		return textinput.Blink
@@ -129,6 +184,8 @@ func (m InvoiceFormModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return m.updateLineItemsMode(msg)
 		case invoiceFormModeAddLineItem:
 			return m.updateAddLineItemMode(msg)
+		case invoiceFormModeEditLineItem:
+			return m.updateEditLineItemMode(msg)
 		}
 	}
 	
@@ -214,6 +271,13 @@ func (m InvoiceFormModel) updateLineItemsMode(msg tea.KeyMsg) (tea.Model, tea.Cm
 		m.mode = invoiceFormModeAddLineItem
 		m.setupLineItemInputs()
 		return m, textinput.Blink
+	case "e":
+		if len(m.invoice.LineItems) > 0 && m.lineItemCursor < len(m.invoice.LineItems) {
+			m.mode = invoiceFormModeEditLineItem
+			m.editingLineItemID = m.invoice.LineItems[m.lineItemCursor].ID
+			m.setupEditLineItemInputs(m.lineItemCursor)
+			return m, textinput.Blink
+		}
 	case "d":
 		if len(m.invoice.LineItems) > 0 && m.lineItemCursor < len(m.invoice.LineItems) {
 			m.invoice.RemoveLineItem(m.invoice.LineItems[m.lineItemCursor].ID)
@@ -245,6 +309,42 @@ func (m InvoiceFormModel) updateAddLineItemMode(msg tea.KeyMsg) (tea.Model, tea.
 		
 		if s == "enter" && m.lineItemFocusIndex == len(m.lineItemInputs) {
 			if err := m.addLineItem(); err != nil {
+				m.err = err
+				return m, nil
+			}
+			m.mode = invoiceFormModeEditLineItems
+			return m, nil
+		}
+		
+		if s == "shift+tab" {
+			m.lineItemFocusIndex--
+		} else {
+			m.lineItemFocusIndex++
+		}
+		
+		if m.lineItemFocusIndex > len(m.lineItemInputs) {
+			m.lineItemFocusIndex = 0
+		} else if m.lineItemFocusIndex < 0 {
+			m.lineItemFocusIndex = len(m.lineItemInputs)
+		}
+		
+		return m.updateLineItemFocus()
+	}
+	
+	cmd := m.updateLineItemInputs(msg)
+	return m, cmd
+}
+
+func (m InvoiceFormModel) updateEditLineItemMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.mode = invoiceFormModeEditLineItems
+		return m, nil
+	case "tab", "shift+tab", "enter":
+		s := msg.String()
+		
+		if s == "enter" && m.lineItemFocusIndex == len(m.lineItemInputs) {
+			if err := m.updateLineItem(); err != nil {
 				m.err = err
 				return m, nil
 			}
@@ -322,6 +422,8 @@ func (m *InvoiceFormModel) updateBasicInputs(msg tea.Msg) tea.Cmd {
 	m.discountInput = m.basicInputs[0]
 	m.taxInput = m.basicInputs[1]
 	m.dueDaysInput = m.basicInputs[2]
+	m.serviceStartInput = m.basicInputs[3]
+	m.serviceEndInput = m.basicInputs[4]
 	
 	m.updateInvoiceRates()
 	
@@ -349,6 +451,24 @@ func (m *InvoiceFormModel) updateInvoiceRates() {
 	
 	if dueDays, err := strconv.Atoi(m.dueDaysInput.Value()); err == nil {
 		m.invoice.DueDate = m.invoice.Date.AddDate(0, 0, dueDays)
+	}
+	
+	// Parse service start date
+	if startDateStr := strings.TrimSpace(m.serviceStartInput.Value()); startDateStr != "" {
+		if startDate, err := time.Parse("2006-01-02", startDateStr); err == nil {
+			m.invoice.ServiceStartDate = &startDate
+		}
+	} else {
+		m.invoice.ServiceStartDate = nil
+	}
+	
+	// Parse service end date
+	if endDateStr := strings.TrimSpace(m.serviceEndInput.Value()); endDateStr != "" {
+		if endDate, err := time.Parse("2006-01-02", endDateStr); err == nil {
+			m.invoice.ServiceEndDate = &endDate
+		}
+	} else {
+		m.invoice.ServiceEndDate = nil
 	}
 }
 
@@ -386,6 +506,52 @@ func (m *InvoiceFormModel) addLineItem() error {
 	return nil
 }
 
+func (m *InvoiceFormModel) updateLineItem() error {
+	desc := strings.TrimSpace(m.lineItemInputs[0].Value())
+	if desc == "" {
+		return fmt.Errorf("description is required")
+	}
+	
+	qtyStr := m.lineItemInputs[1].Value()
+	if qtyStr == "" {
+		qtyStr = "1"
+	}
+	qty, err := decimal.NewFromString(qtyStr)
+	if err != nil {
+		return fmt.Errorf("invalid quantity")
+	}
+	
+	priceStr := m.lineItemInputs[2].Value()
+	if priceStr == "" {
+		priceStr = "0"
+	}
+	price, err := decimal.NewFromString(priceStr)
+	if err != nil {
+		return fmt.Errorf("invalid price")
+	}
+	
+	// Find and update the line item
+	for i, item := range m.invoice.LineItems {
+		if item.ID == m.editingLineItemID {
+			m.invoice.LineItems[i].Description = desc
+			m.invoice.LineItems[i].Quantity = qty
+			m.invoice.LineItems[i].UnitPrice = price
+			m.invoice.LineItems[i].UpdateTotal()
+			break
+		}
+	}
+	
+	// Recalculate invoice totals
+	m.invoice.CalculateTotals()
+	
+	// Clear inputs
+	for i := range m.lineItemInputs {
+		m.lineItemInputs[i].SetValue("")
+	}
+	
+	return nil
+}
+
 func (m *InvoiceFormModel) saveInvoice() (tea.Model, tea.Cmd) {
 	m.updateInvoiceRates()
 	
@@ -412,6 +578,8 @@ func (m InvoiceFormModel) View() string {
 		return m.viewLineItems()
 	case invoiceFormModeAddLineItem:
 		return m.viewAddLineItem()
+	case invoiceFormModeEditLineItem:
+		return m.viewEditLineItem()
 	default:
 		return m.viewBasic()
 	}
@@ -455,7 +623,13 @@ func (m InvoiceFormModel) viewBasic() string {
 	s.WriteString(m.taxInput.View() + "\n")
 	
 	s.WriteString(formLabelStyle.Render("Due Days:"))
-	s.WriteString(m.dueDaysInput.View() + "\n\n")
+	s.WriteString(m.dueDaysInput.View() + "\n")
+	
+	s.WriteString(formLabelStyle.Render("Service Start:"))
+	s.WriteString(m.serviceStartInput.View() + "\n")
+	
+	s.WriteString(formLabelStyle.Render("Service End:"))
+	s.WriteString(m.serviceEndInput.View() + "\n\n")
 	
 	nextButton := "[ Next: Line Items ]"
 	if m.basicFocusIndex == len(m.basicInputs)+offset {
@@ -547,7 +721,7 @@ func (m InvoiceFormModel) viewLineItems() string {
 		s.WriteString(fmt.Sprintf("%*s", 74, fmt.Sprintf("Total: $%.2f", m.invoice.Total.InexactFloat64())) + "\n")
 	}
 	
-	s.WriteString("\n" + helpStyle.Render("a add • d delete • s save • ↑/k up • ↓/j down • esc back"))
+	s.WriteString("\n" + helpStyle.Render("a add • e edit • d delete • s save • ↑/k up • ↓/j down • esc back"))
 	
 	return appStyle.Render(s.String())
 }
@@ -578,6 +752,36 @@ func (m InvoiceFormModel) viewAddLineItem() string {
 	s.WriteString(button)
 	
 	s.WriteString("\n\n" + helpStyle.Render("tab navigate • enter add • esc cancel"))
+	
+	return appStyle.Render(s.String())
+}
+
+func (m InvoiceFormModel) viewEditLineItem() string {
+	var s strings.Builder
+	
+	s.WriteString(titleStyle.Render("Edit Line Item") + "\n\n")
+	
+	if m.err != nil {
+		s.WriteString(errorStyle.Render(fmt.Sprintf("Error: %v", m.err)) + "\n\n")
+		m.err = nil
+	}
+	
+	labels := []string{"Description:", "Quantity:", "Unit Price:"}
+	for i, label := range labels {
+		s.WriteString(formLabelStyle.Render(label))
+		s.WriteString(m.lineItemInputs[i].View())
+		s.WriteString("\n")
+	}
+	
+	s.WriteString("\n")
+	
+	button := "[ Update Item ]"
+	if m.lineItemFocusIndex == len(m.lineItemInputs) {
+		button = selectedStyle.Render(button)
+	}
+	s.WriteString(button)
+	
+	s.WriteString("\n\n" + helpStyle.Render("tab navigate • enter update • esc cancel"))
 	
 	return appStyle.Render(s.String())
 }
