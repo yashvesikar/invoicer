@@ -4,6 +4,9 @@
 \usepackage{graphicx}
 \usepackage{array}
 \usepackage{fancyhdr}
+\usepackage{booktabs}
+\usepackage[table]{xcolor}
+\usepackage{colortbl}
 
 % Header and footer setup
 \pagestyle{fancy}
@@ -13,6 +16,13 @@
 
 \setlength{\parindent}{0pt}
 \setlength{\parskip}{1em}
+
+% Define colors for alternating rows
+\definecolor{lightgray}{gray}{0.95}
+
+% Remove extra spacing from booktabs in colored tables
+\aboverulesep=0ex
+\belowrulesep=0ex
 
 \begin{document}
 
@@ -43,22 +53,30 @@
 
 \vspace{1cm}
 
-\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}X|r|r|r|}
-    \hline
+% Main invoice table with better formatting
+\rowcolors{2}{white}{lightgray}
+\begin{tabularx}{\textwidth}{>{\raggedright\arraybackslash}X r r r}
+    \toprule
+    \rowcolor{white}
     \textbf{Description} & \textbf{Quantity} & \textbf{Unit Price} & \textbf{Amount} \\
-    \hline
+    \midrule
     {{range .Invoice.LineItems}}{{.Description | escapeLatex}} & {{printf "%.2f" .Quantity.InexactFloat64}} & \${{printf "%.2f" .UnitPrice.InexactFloat64}} & \${{printf "%.2f" .Total.InexactFloat64}} \\
-    \hline
     {{end}}
-    \multicolumn{3}{|r|}{\textbf{Subtotal}} & \${{printf "%.2f" .Invoice.Subtotal.InexactFloat64}} \\
-    \hline
-    {{if .HasDiscount}}\multicolumn{3}{|r|}{\textbf{Discount ({{printf "%.1f" .Invoice.DiscountRate.InexactFloat64}}\%)}} & -\${{printf "%.2f" .Invoice.Discount.InexactFloat64}} \\
-    \hline
-    {{end}}{{if .HasTax}}\multicolumn{3}{|r|}{\textbf{Tax ({{printf "%.1f" .Invoice.TaxRate.InexactFloat64}}\%)}} & \${{printf "%.2f" .Invoice.Tax.InexactFloat64}} \\
-    \hline
-    {{end}}\multicolumn{3}{|r|}{\textbf{Total Due}} & \textbf{\${{printf "%.2f" .Invoice.Total.InexactFloat64}}} \\
-    \hline
+    \bottomrule
 \end{tabularx}
+
+\vspace{0.5cm}
+
+% Summary section separated from main table
+\begin{flushright}
+\begin{tabular}{l r}
+    \textbf{Subtotal:} & \${{printf "%.2f" .Invoice.Subtotal.InexactFloat64}} \\
+    {{if .HasDiscount}}\textbf{Discount ({{printf "%.1f" .Invoice.DiscountRate.InexactFloat64}}\%):} & -\${{printf "%.2f" .Invoice.Discount.InexactFloat64}} \\{{end}}
+    {{if .HasTax}}\textbf{Tax ({{printf "%.1f" .Invoice.TaxRate.InexactFloat64}}\%):} & \${{printf "%.2f" .Invoice.Tax.InexactFloat64}} \\{{end}}
+    \midrule
+    \textbf{Total Due:} & \textbf{\${{printf "%.2f" .Invoice.Total.InexactFloat64}}} \\
+\end{tabular}
+\end{flushright}
 
 \vspace{1cm}
 

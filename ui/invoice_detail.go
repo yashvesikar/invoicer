@@ -244,12 +244,19 @@ func (m InvoiceDetailModel) viewDetail() string {
 	if len(m.invoice.LineItems) == 0 {
 		s.WriteString(dimStyle.Render("No line items") + "\n")
 	} else {
-		headers := []string{"Description", "Qty", "Unit Price", "Total"}
-		widths := []int{m.width - 30, 8, 10, 12}
+		// Calculate dynamic column widths
+		descWidth := m.width - 35 // Reserve space for numeric columns
+		if descWidth < 30 {
+			descWidth = 30
+		}
 		
+		headers := []string{"Description", "Qty", "Unit Price", "Total"}
+		widths := []int{descWidth, 10, 12, 13}
+		
+		// Header row with better spacing
 		headerRow := ""
 		for i, h := range headers {
-			style := tableHeaderStyle.Copy().Width(widths[i])
+			style := tableHeaderStyle.Copy().Width(widths[i]).Padding(0, 1)
 			if i > 0 {
 				style = style.Align(lipgloss.Right)
 			}
@@ -257,9 +264,13 @@ func (m InvoiceDetailModel) viewDetail() string {
 		}
 		s.WriteString(headerRow + "\n")
 		
-		for _, item := range m.invoice.LineItems {
+		// Add a subtle separator after headers
+		s.WriteString(dimStyle.Render(strings.Repeat("─", m.width)) + "\n")
+		
+		// Render line items with alternating background
+		for idx, item := range m.invoice.LineItems {
 			cells := []string{
-				truncate(item.Description, widths[0]-2),
+				truncate(item.Description, widths[0]-4),
 				fmt.Sprintf("%.2f", item.Quantity.InexactFloat64()),
 				fmt.Sprintf("$%.2f", item.UnitPrice.InexactFloat64()),
 				fmt.Sprintf("$%.2f", item.Total.InexactFloat64()),
@@ -267,9 +278,13 @@ func (m InvoiceDetailModel) viewDetail() string {
 			
 			row := ""
 			for i, cell := range cells {
-				style := tableCellStyle.Copy().Width(widths[i])
+				style := tableCellStyle.Copy().Width(widths[i]).Padding(0, 1)
 				if i > 0 {
 					style = style.Align(lipgloss.Right)
+				}
+				// Add subtle alternating background
+				if idx%2 == 1 {
+					style = style.Background(lipgloss.Color("236"))
 				}
 				row += style.Render(cell)
 			}
@@ -279,23 +294,45 @@ func (m InvoiceDetailModel) viewDetail() string {
 	
 	s.WriteString(strings.Repeat("─", m.width) + "\n")
 	
-	summaryStyle := lipgloss.NewStyle().Width(m.width).Align(lipgloss.Right)
-	s.WriteString(summaryStyle.Render(fmt.Sprintf("Subtotal: $%.2f", m.invoice.Subtotal.InexactFloat64())) + "\n")
+	// Create a summary section with better formatting
+	summaryWidth := 30
+	summaryOffset := m.width - summaryWidth
+	
+	// Helper function to format summary lines
+	formatSummaryLine := func(label, amount string, isBold bool) string {
+		labelStyle := lipgloss.NewStyle().Width(15).Align(lipgloss.Right)
+		amountStyle := lipgloss.NewStyle().Width(15).Align(lipgloss.Right)
+		if isBold {
+			labelStyle = labelStyle.Bold(true)
+			amountStyle = amountStyle.Bold(true)
+		}
+		return strings.Repeat(" ", summaryOffset) + 
+			labelStyle.Render(label) + 
+			amountStyle.Render(amount)
+	}
+	
+	s.WriteString(formatSummaryLine("Subtotal:", fmt.Sprintf("$%.2f", m.invoice.Subtotal.InexactFloat64()), false) + "\n")
 	
 	if m.invoice.DiscountRate.GreaterThan(models.DecimalZero) {
-		s.WriteString(summaryStyle.Render(fmt.Sprintf("Discount (%.1f%%): -$%.2f", 
-			m.invoice.DiscountRate.InexactFloat64(), 
-			m.invoice.Discount.InexactFloat64())) + "\n")
+		s.WriteString(formatSummaryLine(
+			fmt.Sprintf("Discount (%.1f%%):", m.invoice.DiscountRate.InexactFloat64()),
+			fmt.Sprintf("-$%.2f", m.invoice.Discount.InexactFloat64()),
+			false,
+		) + "\n")
 	}
 	
 	if m.invoice.TaxRate.GreaterThan(models.DecimalZero) {
-		s.WriteString(summaryStyle.Render(fmt.Sprintf("Tax (%.1f%%): $%.2f", 
-			m.invoice.TaxRate.InexactFloat64(), 
-			m.invoice.Tax.InexactFloat64())) + "\n")
+		s.WriteString(formatSummaryLine(
+			fmt.Sprintf("Tax (%.1f%%):", m.invoice.TaxRate.InexactFloat64()),
+			fmt.Sprintf("$%.2f", m.invoice.Tax.InexactFloat64()),
+			false,
+		) + "\n")
 	}
 	
-	totalStyle := summaryStyle.Copy().Bold(true)
-	s.WriteString(totalStyle.Render(fmt.Sprintf("Total: $%.2f", m.invoice.Total.InexactFloat64())) + "\n")
+	// Add a separator before total
+	s.WriteString(strings.Repeat(" ", summaryOffset) + dimStyle.Render(strings.Repeat("─", summaryWidth)) + "\n")
+	
+	s.WriteString(formatSummaryLine("Total:", fmt.Sprintf("$%.2f", m.invoice.Total.InexactFloat64()), true) + "\n")
 	
 	if m.message != "" {
 		s.WriteString("\n")
