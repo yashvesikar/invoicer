@@ -15,4 +15,7 @@ type Storage interface {
 	DeleteInvoice(id string) error
 	GetNextInvoiceNumber(year int) (int, error)
 	GetInvoicesByClient(clientID string) ([]Invoice, error)
+	
+	SaveAuditEntry(entry *AuditEntry) error
+	GetAuditEntries(invoiceID string) ([]AuditEntry, error)
 }

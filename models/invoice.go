@@ -133,6 +133,16 @@ func (i *Invoice) SetTaxRate(rate decimal.Decimal) {
 	i.CalculateTotals()
 }
 
+func (i *Invoice) UpdateStatus(newStatus InvoiceStatus, reason string) error {
+	if i.Status == newStatus {
+		return fmt.Errorf("invoice already has status %s", newStatus)
+	}
+	
+	i.Status = newStatus
+	i.UpdatedAt = time.Now()
+	return nil
+}
+
 func GenerateInvoiceNumber(year int, sequence int) string {
 	return fmt.Sprintf("%d-%02d", year, sequence)
 }

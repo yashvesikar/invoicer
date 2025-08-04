@@ -15,6 +15,7 @@ type JSONStorage struct {
 	dataDir      string
 	clientsFile  string
 	invoicesFile string
+	auditFile    string
 	mu           sync.RWMutex
 }
 
@@ -27,6 +28,7 @@ func NewJSONStorage(dataDir string) (*JSONStorage, error) {
 		dataDir:      dataDir,
 		clientsFile:  filepath.Join(dataDir, "clients.json"),
 		invoicesFile: filepath.Join(dataDir, "invoices.json"),
+		auditFile:    filepath.Join(dataDir, "audit.json"),
 	}
 	
 	if err := s.initFiles(); err != nil {
@@ -37,7 +39,7 @@ func NewJSONStorage(dataDir string) (*JSONStorage, error) {
 }
 
 func (s *JSONStorage) initFiles() error {
-	files := []string{s.clientsFile, s.invoicesFile}
+	files := []string{s.clientsFile, s.invoicesFile, s.auditFile}
 	for _, file := range files {
 		if _, err := os.Stat(file); os.IsNotExist(err) {
 			if err := os.WriteFile(file, []byte("[]"), 0644); err != nil {
@@ -294,4 +296,59 @@ func (s *JSONStorage) GetInvoicesByClient(clientID string) ([]models.Invoice, er
 	}
 	
 	return clientInvoices, nil
+}
+
+func (s *JSONStorage) readAuditEntries() ([]models.AuditEntry, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	
+	data, err := os.ReadFile(s.auditFile)
+	if err != nil {
+		return nil, err
+	}
+	
+	var entries []models.AuditEntry
+	if err := json.Unmarshal(data, &entries); err != nil {
+		return nil, err
+	}
+	
+	return entries, nil
+}
+
+func (s *JSONStorage) writeAuditEntries(entries []models.AuditEntry) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	
+	data, err := json.MarshalIndent(entries, "", "  ")
+	if err != nil {
+		return err
+	}
+	
+	return os.WriteFile(s.auditFile, data, 0644)
+}
+
+func (s *JSONStorage) SaveAuditEntry(entry *models.AuditEntry) error {
+	entries, err := s.readAuditEntries()
+	if err != nil {
+		return err
+	}
+	
+	entries = append(entries, *entry)
+	return s.writeAuditEntries(entries)
+}
+
+func (s *JSONStorage) GetAuditEntries(invoiceID string) ([]models.AuditEntry, error) {
+	entries, err := s.readAuditEntries()
+	if err != nil {
+		return nil, err
+	}
+	
+	invoiceEntries := []models.AuditEntry{}
+	for _, entry := range entries {
+		if entry.InvoiceID == invoiceID {
+			invoiceEntries = append(invoiceEntries, entry)
+		}
+	}
+	
+	return invoiceEntries, nil
 }

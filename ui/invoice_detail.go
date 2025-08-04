@@ -17,6 +17,7 @@ type invoiceDetailMode int
 const (
 	invoiceDetailModeView invoiceDetailMode = iota
 	invoiceDetailModeExportLocation
+	invoiceDetailModeStatusSelect
 )
 
 type InvoiceDetailModel struct {
@@ -28,6 +29,7 @@ type InvoiceDetailModel struct {
 	isError         bool
 	mode            invoiceDetailMode
 	exportLocationModel ExportLocationModel
+	statusSelectModel   StatusSelectModel
 }
 
 func NewInvoiceDetailModel(storage models.Storage, cfg *config.Config, invoice *models.Invoice) InvoiceDetailModel {
@@ -50,6 +52,8 @@ func (m InvoiceDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.updateView(msg)
 	case invoiceDetailModeExportLocation:
 		return m.updateExportLocation(msg)
+	case invoiceDetailModeStatusSelect:
+		return m.updateStatusSelect(msg)
 	}
 	return m, nil
 }
@@ -69,6 +73,11 @@ func (m InvoiceDetailModel) updateView(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.mode = invoiceDetailModeExportLocation
 			m.exportLocationModel = NewExportLocationModel(m.invoice.Number)
 			return m, m.exportLocationModel.Init()
+		case "s":
+			// Switch to status select mode
+			m.mode = invoiceDetailModeStatusSelect
+			m.statusSelectModel = NewStatusSelectModel(m.invoice.Status)
+			return m, m.statusSelectModel.Init()
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width - 4
@@ -121,12 +130,72 @@ func (m InvoiceDetailModel) updateExportLocation(msg tea.Msg) (tea.Model, tea.Cm
 	}
 }
 
+func (m InvoiceDetailModel) updateStatusSelect(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case StatusSelectedMsg:
+		// Update invoice status
+		oldStatus := m.invoice.Status
+		err := m.invoice.UpdateStatus(msg.Status, msg.Reason)
+		if err != nil {
+			m.message = fmt.Sprintf("Error updating status: %v", err)
+			m.isError = true
+			m.mode = invoiceDetailModeView
+			return m, nil
+		}
+		
+		// Save the updated invoice
+		err = m.storage.UpdateInvoice(m.invoice)
+		if err != nil {
+			m.message = fmt.Sprintf("Error saving invoice: %v", err)
+			m.isError = true
+			m.mode = invoiceDetailModeView
+			return m, nil
+		}
+		
+		// Log the status change in audit
+		entry := models.NewAuditEntry(
+			m.invoice.ID,
+			m.invoice.Number,
+			oldStatus,
+			m.invoice.Status,
+			msg.Reason,
+		)
+		
+		err = m.storage.SaveAuditEntry(entry)
+		if err != nil {
+			// Log error but don't fail the operation
+			m.message = fmt.Sprintf("Status updated but audit log failed: %v", err)
+			m.isError = true
+		} else {
+			m.message = fmt.Sprintf("Status changed from %s to %s", oldStatus, msg.Status)
+			m.isError = false
+		}
+		
+		m.mode = invoiceDetailModeView
+		return m, nil
+		
+	case CancelStatusChangeMsg:
+		// Cancel status change and go back to view mode
+		m.mode = invoiceDetailModeView
+		return m, nil
+		
+	default:
+		// Pass through to status select model
+		var cmd tea.Cmd
+		model, cmd := m.statusSelectModel.Update(msg)
+		m.statusSelectModel = model.(StatusSelectModel)
+		return m, cmd
+	}
+}
+
 func (m InvoiceDetailModel) View() string {
 	switch m.mode {
 	case invoiceDetailModeView:
 		return m.viewDetail()
 	case invoiceDetailModeExportLocation:
 		return m.exportLocationModel.View()
+	case invoiceDetailModeStatusSelect:
+		return m.statusSelectModel.View()
 	}
 	return ""
 }
@@ -237,7 +306,31 @@ func (m InvoiceDetailModel) viewDetail() string {
 		}
 	}
 	
-	s.WriteString("\n" + helpStyle.Render("e edit • p export PDF • esc back • q quit"))
+	// Show audit history
+	auditEntries, err := m.storage.GetAuditEntries(m.invoice.ID)
+	if err == nil && len(auditEntries) > 0 {
+		s.WriteString("\n\n" + subtitleStyle.Render("Status History") + "\n")
+		s.WriteString(strings.Repeat("─", m.width) + "\n")
+		
+		for i, entry := range auditEntries {
+			if i > 0 {
+				s.WriteString(dimStyle.Render(strings.Repeat("·", m.width)) + "\n")
+			}
+			
+			timeStr := entry.ChangedAt.Format("Jan 2, 2006 3:04 PM")
+			s.WriteString(formLabelStyle.Render("Date:") + " " + timeStr + "\n")
+			s.WriteString(formLabelStyle.Render("Changed:") + " " + 
+				getStatusStyle(entry.OldStatus).Render(string(entry.OldStatus)) + 
+				" → " + 
+				getStatusStyle(entry.NewStatus).Render(string(entry.NewStatus)) + "\n")
+			
+			if entry.Reason != "" {
+				s.WriteString(formLabelStyle.Render("Reason:") + " " + entry.Reason + "\n")
+			}
+		}
+	}
+	
+	s.WriteString("\n" + helpStyle.Render("e edit • s change status • p export PDF • esc back • q quit"))
 	
 	return appStyle.Render(s.String())
 }
