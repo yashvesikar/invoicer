@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/user/invoicer/config"
 	"github.com/user/invoicer/models"
 )
 
@@ -19,14 +20,16 @@ type InvoiceListModel struct {
 	invoices          []models.Invoice
 	cursor            int
 	storage           models.Storage
+	config            *config.Config
 	mode              invoiceListMode
 	selectedForDelete string
 	err               error
 }
 
-func NewInvoiceListModel(storage models.Storage) InvoiceListModel {
+func NewInvoiceListModel(storage models.Storage, cfg *config.Config) InvoiceListModel {
 	m := InvoiceListModel{
 		storage: storage,
+		config:  cfg,
 		mode:    invoiceListModeView,
 	}
 	m.loadInvoices()
@@ -56,7 +59,7 @@ func (m InvoiceListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+c", "q":
 				return m, tea.Quit
 			case "esc":
-				return NewMainMenuModel(m.storage), nil
+				return NewMainMenuModel(m.storage, m.config), nil
 			case "up", "k":
 				if m.cursor > 0 {
 					m.cursor--
@@ -75,14 +78,14 @@ func (m InvoiceListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.err = fmt.Errorf("no clients found. Please add a client first")
 					return m, nil
 				}
-				return NewInvoiceFormModel(m.storage, nil), nil
+				return NewInvoiceFormModel(m.storage, m.config, nil), nil
 			case "e":
 				if len(m.invoices) > 0 {
-					return NewInvoiceFormModel(m.storage, &m.invoices[m.cursor]), nil
+					return NewInvoiceFormModel(m.storage, m.config, &m.invoices[m.cursor]), nil
 				}
 			case "v":
 				if len(m.invoices) > 0 {
-					return NewInvoiceDetailModel(m.storage, &m.invoices[m.cursor]), nil
+					return NewInvoiceDetailModel(m.storage, m.config, &m.invoices[m.cursor]), nil
 				}
 			case "d":
 				if len(m.invoices) > 0 {
@@ -91,7 +94,7 @@ func (m InvoiceListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				if len(m.invoices) > 0 {
-					return NewInvoiceDetailModel(m.storage, &m.invoices[m.cursor]), nil
+					return NewInvoiceDetailModel(m.storage, m.config, &m.invoices[m.cursor]), nil
 				}
 			}
 		case invoiceListModeConfirmDelete:

@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/shopspring/decimal"
+	"github.com/user/invoicer/config"
 	"github.com/user/invoicer/models"
 )
 
@@ -26,13 +27,14 @@ type ClientFormModel struct {
 	focusIndex      int
 	emailFocusIndex int
 	storage         models.Storage
+	config          *config.Config
 	client          *models.Client
 	isEdit          bool
 	mode            clientFormMode
 	err             error
 }
 
-func NewClientFormModel(storage models.Storage, client *models.Client) ClientFormModel {
+func NewClientFormModel(storage models.Storage, cfg *config.Config, client *models.Client) ClientFormModel {
 	nameInput := textinput.New()
 	nameInput.Placeholder = "John Doe"
 	nameInput.Focus()
@@ -70,6 +72,7 @@ func NewClientFormModel(storage models.Storage, client *models.Client) ClientFor
 		emailInputs:     emailInputs,
 		emails:          emails,
 		storage:         storage,
+		config:          cfg,
 		client:          client,
 		isEdit:          isEdit,
 		mode:            clientFormModeEdit,
@@ -103,7 +106,7 @@ func (m ClientFormModel) updateEditMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "ctrl+c":
 			return m, tea.Quit
 		case "esc":
-			return NewClientListModel(m.storage), func() tea.Msg { return BackToClientListMsg{} }
+			return NewClientListModel(m.storage, m.config), func() tea.Msg { return BackToClientListMsg{} }
 		case "tab", "shift+tab", "enter", "up", "down":
 			s := msg.String()
 			
@@ -122,7 +125,7 @@ func (m ClientFormModel) updateEditMode(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.err = err
 					return m, nil
 				}
-				return NewClientListModel(m.storage), func() tea.Msg { return BackToClientListMsg{} }
+				return NewClientListModel(m.storage, m.config), func() tea.Msg { return BackToClientListMsg{} }
 			}
 			
 			if s == "up" || s == "shift+tab" {

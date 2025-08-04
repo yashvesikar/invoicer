@@ -11,6 +11,7 @@ import (
 	"text/template"
 
 	"github.com/shopspring/decimal"
+	"github.com/user/invoicer/config"
 	"github.com/user/invoicer/models"
 )
 
@@ -31,6 +32,11 @@ func escapeLatex(s string) string {
 	return replacer.Replace(s)
 }
 
+type PaymentMethod struct {
+	Type    string
+	Details string
+}
+
 type InvoiceTemplateData struct {
 	Invoice      *models.Invoice
 	FromName     string
@@ -42,46 +48,64 @@ type InvoiceTemplateData struct {
 	DueDate      string
 	HasDiscount  bool
 	HasTax       bool
+	PaymentMethods []PaymentMethod
 }
 
-func ExportInvoiceToPDF(invoice *models.Invoice, client *models.Client, fromName, fromAddress, fromEmail string) error {
+func ExportInvoiceToPDF(invoice *models.Invoice, client *models.Client, cfg *config.Config, exportPath, templatePath string) error {
 	// Check if pdflatex is available
 	_, err := exec.LookPath("pdflatex")
 	if err != nil {
 		return fmt.Errorf("pdflatex not found in PATH. Please install LaTeX (e.g., TeX Live, MiKTeX) to export PDFs")
 	}
 	
-	// Get the working directory to ensure we save to the correct location
-	workDir, err := os.Getwd()
-	if err != nil {
-		return fmt.Errorf("failed to get working directory: %w", err)
-	}
-	
-	// Create exports directory if it doesn't exist
-	exportDir := filepath.Join(workDir, "exports")
-	if err := os.MkdirAll(exportDir, 0755); err != nil {
-		return fmt.Errorf("failed to create exports directory: %w", err)
+	// Ensure export directory exists
+	if err := os.MkdirAll(exportPath, 0755); err != nil {
+		return fmt.Errorf("failed to create export directory: %w", err)
 	}
 	
 	// Log where we're saving the file
-	fmt.Printf("Saving PDF to directory: %s\n", exportDir)
+	fmt.Printf("Saving PDF to directory: %s\n", exportPath)
 	
+	// Build payment methods from config
+	var paymentMethods []PaymentMethod
+	
+	if cfg.ZelleAccount != "" {
+		paymentMethods = append(paymentMethods, PaymentMethod{
+			Type:    "Zelle",
+			Details: escapeLatex(cfg.ZelleAccount),
+		})
+	}
+	
+	if cfg.VenmoAccount != "" {
+		paymentMethods = append(paymentMethods, PaymentMethod{
+			Type:    "Venmo",
+			Details: escapeLatex(cfg.VenmoAccount),
+		})
+	}
+	
+	if cfg.BankName != "" && cfg.BankRouting != "" && cfg.BankAccount != "" {
+		paymentMethods = append(paymentMethods, PaymentMethod{
+			Type:    "Bank Wire",
+			Details: escapeLatex(fmt.Sprintf("%s, Routing: %s, Account: %s", cfg.BankName, cfg.BankRouting, cfg.BankAccount)),
+		})
+	}
+
 	// Prepare template data with escaped strings
 	data := InvoiceTemplateData{
 		Invoice:       invoice,
-		FromName:      escapeLatex(fromName),
-		FromAddress:   escapeLatex(fromAddress),
-		FromEmail:     escapeLatex(fromEmail),
+		FromName:      escapeLatex(cfg.CompanyName),
+		FromAddress:   escapeLatex(cfg.CompanyAddress),
+		FromEmail:     escapeLatex(cfg.CompanyEmail),
 		ClientAddress: escapeLatex(client.Address),
 		ClientEmails:  client.Emails, // Will handle escaping in template
 		InvoiceDate:   invoice.Date.Format("January 2, 2006"),
 		DueDate:       invoice.DueDate.Format("January 2, 2006"),
 		HasDiscount:   invoice.DiscountRate.GreaterThan(decimal.Zero),
 		HasTax:        invoice.TaxRate.GreaterThan(decimal.Zero),
+		PaymentMethods: paymentMethods,
 	}
 	
 	// Read template
-	templatePath := "./templates/invoice.tex"
 	tmplContent, err := os.ReadFile(templatePath)
 	if err != nil {
 		return fmt.Errorf("failed to read template: %w", err)
@@ -119,7 +143,7 @@ func ExportInvoiceToPDF(invoice *models.Invoice, client *models.Client, fromName
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		// Save the generated .tex file for debugging
-		debugFile := filepath.Join(exportDir, fmt.Sprintf("debug_invoice_%s.tex", invoice.Number))
+		debugFile := filepath.Join(exportPath, fmt.Sprintf("debug_invoice_%s.tex", invoice.Number))
 		debugErr := os.WriteFile(debugFile, buf.Bytes(), 0644)
 		if debugErr == nil {
 			fmt.Printf("DEBUG: Saved generated .tex file to: %s\n", debugFile)
@@ -142,7 +166,7 @@ func ExportInvoiceToPDF(invoice *models.Invoice, client *models.Client, fromName
 	
 	// Move PDF to exports directory
 	tempPDF := filepath.Join(tempDir, fmt.Sprintf("invoice_%s.pdf", invoice.Number))
-	finalPDF := filepath.Join(exportDir, fmt.Sprintf("invoice_%s.pdf", invoice.Number))
+	finalPDF := filepath.Join(exportPath, fmt.Sprintf("invoice_%s.pdf", invoice.Number))
 	defer os.Remove(tempPDF)
 	
 	fmt.Printf("Moving PDF from: %s\n", tempPDF)
@@ -182,11 +206,6 @@ func copyFile(src, dst string) error {
 	return err
 }
 
-func GetExportPath(invoice *models.Invoice) string {
-	workDir, err := os.Getwd()
-	if err != nil {
-		// Fallback to relative path if we can't get working directory
-		return filepath.Join("./exports", fmt.Sprintf("invoice_%s.pdf", invoice.Number))
-	}
-	return filepath.Join(workDir, "exports", fmt.Sprintf("invoice_%s.pdf", invoice.Number))
+func GetExportPath(invoice *models.Invoice, exportPath string) string {
+	return filepath.Join(exportPath, fmt.Sprintf("invoice_%s.pdf", invoice.Number))
 }

@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/shopspring/decimal"
+	"github.com/user/invoicer/config"
 	"github.com/user/invoicer/models"
 )
 
@@ -23,6 +24,7 @@ const (
 
 type InvoiceFormModel struct {
 	storage            models.Storage
+	config             *config.Config
 	invoice            *models.Invoice
 	isEdit             bool
 	mode               invoiceFormMode
@@ -43,7 +45,7 @@ type InvoiceFormModel struct {
 	err                error
 }
 
-func NewInvoiceFormModel(storage models.Storage, invoice *models.Invoice) InvoiceFormModel {
+func NewInvoiceFormModel(storage models.Storage, cfg *config.Config, invoice *models.Invoice) InvoiceFormModel {
 	discountInput := textinput.New()
 	discountInput.Placeholder = "0"
 	discountInput.Width = 10
@@ -58,6 +60,7 @@ func NewInvoiceFormModel(storage models.Storage, invoice *models.Invoice) Invoic
 	
 	m := InvoiceFormModel{
 		storage:       storage,
+		config:        cfg,
 		invoice:       invoice,
 		isEdit:        invoice != nil,
 		mode:          invoiceFormModeEditBasic,
@@ -137,7 +140,7 @@ func (m InvoiceFormModel) updateBasicMode(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "ctrl+c":
 		return m, tea.Quit
 	case "esc":
-		return NewInvoiceListModel(m.storage), func() tea.Msg { return BackToInvoiceListMsg{} }
+		return NewInvoiceListModel(m.storage, m.config), func() tea.Msg { return BackToInvoiceListMsg{} }
 	case "tab", "shift+tab", "enter", "up", "down":
 		s := msg.String()
 		
@@ -398,7 +401,7 @@ func (m *InvoiceFormModel) saveInvoice() (tea.Model, tea.Cmd) {
 		return m, nil
 	}
 	
-	return NewInvoiceListModel(m.storage), func() tea.Msg { return BackToInvoiceListMsg{} }
+	return NewInvoiceListModel(m.storage, m.config), func() tea.Msg { return BackToInvoiceListMsg{} }
 }
 
 func (m InvoiceFormModel) View() string {

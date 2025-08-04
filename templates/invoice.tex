@@ -63,7 +63,10 @@
 \vspace{1cm}
 
 \textbf{Payment Instructions:} \\
-Please make payment to the account details provided separately.
+{{if .PaymentMethods}}Please send payment using one of the following methods:\\
+{{range .PaymentMethods}}\textbf{ {{.Type}}: } {{.Details}}\\
+{{end}}{{else}}Please make payment to the account details provided separately.
+{{end}}
 
 \vfill
 

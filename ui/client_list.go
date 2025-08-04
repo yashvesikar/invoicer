@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/user/invoicer/config"
 	"github.com/user/invoicer/models"
 )
 
@@ -19,14 +20,16 @@ type ClientListModel struct {
 	clients         []models.Client
 	cursor          int
 	storage         models.Storage
+	config          *config.Config
 	mode            clientListMode
 	selectedForDelete string
 	err             error
 }
 
-func NewClientListModel(storage models.Storage) ClientListModel {
+func NewClientListModel(storage models.Storage, cfg *config.Config) ClientListModel {
 	m := ClientListModel{
 		storage: storage,
+		config:  cfg,
 		mode:    clientListModeView,
 	}
 	m.loadClients()
@@ -56,7 +59,7 @@ func (m ClientListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case "ctrl+c", "q":
 				return m, tea.Quit
 			case "esc":
-				return NewMainMenuModel(m.storage), nil
+				return NewMainMenuModel(m.storage, m.config), nil
 			case "up", "k":
 				if m.cursor > 0 {
 					m.cursor--
@@ -66,10 +69,10 @@ func (m ClientListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.cursor++
 				}
 			case "a":
-				return NewClientFormModel(m.storage, nil), nil
+				return NewClientFormModel(m.storage, m.config, nil), nil
 			case "e":
 				if len(m.clients) > 0 {
-					return NewClientFormModel(m.storage, &m.clients[m.cursor]), nil
+					return NewClientFormModel(m.storage, m.config, &m.clients[m.cursor]), nil
 				}
 			case "d":
 				if len(m.clients) > 0 {
@@ -78,7 +81,7 @@ func (m ClientListModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case "enter":
 				if len(m.clients) > 0 {
-					return NewClientFormModel(m.storage, &m.clients[m.cursor]), nil
+					return NewClientFormModel(m.storage, m.config, &m.clients[m.cursor]), nil
 				}
 			}
 		case clientListModeConfirmDelete:

@@ -2,27 +2,41 @@ package ui
 
 import (
 	"fmt"
+	"path/filepath"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/user/invoicer/config"
 	"github.com/user/invoicer/export"
 	"github.com/user/invoicer/models"
 )
 
+type invoiceDetailMode int
+
+const (
+	invoiceDetailModeView invoiceDetailMode = iota
+	invoiceDetailModeExportLocation
+)
+
 type InvoiceDetailModel struct {
-	invoice *models.Invoice
-	storage models.Storage
-	width   int
-	message string
-	isError bool
+	invoice         *models.Invoice
+	storage         models.Storage
+	config          *config.Config
+	width           int
+	message         string
+	isError         bool
+	mode            invoiceDetailMode
+	exportLocationModel ExportLocationModel
 }
 
-func NewInvoiceDetailModel(storage models.Storage, invoice *models.Invoice) InvoiceDetailModel {
+func NewInvoiceDetailModel(storage models.Storage, cfg *config.Config, invoice *models.Invoice) InvoiceDetailModel {
 	return InvoiceDetailModel{
 		invoice: invoice,
 		storage: storage,
+		config:  cfg,
 		width:   80,
+		mode:    invoiceDetailModeView,
 	}
 }
 
@@ -31,39 +45,30 @@ func (m InvoiceDetailModel) Init() tea.Cmd {
 }
 
 func (m InvoiceDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch m.mode {
+	case invoiceDetailModeView:
+		return m.updateView(msg)
+	case invoiceDetailModeExportLocation:
+		return m.updateExportLocation(msg)
+	}
+	return m, nil
+}
+
+func (m InvoiceDetailModel) updateView(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
 		case "ctrl+c", "q":
 			return m, tea.Quit
 		case "esc":
-			return NewInvoiceListModel(m.storage), func() tea.Msg { return BackToInvoiceListMsg{} }
+			return NewInvoiceListModel(m.storage, m.config), func() tea.Msg { return BackToInvoiceListMsg{} }
 		case "e":
-			return NewInvoiceFormModel(m.storage, m.invoice), nil
+			return NewInvoiceFormModel(m.storage, m.config, m.invoice), nil
 		case "p":
-			// Export to PDF
-			client, err := m.storage.GetClient(m.invoice.ClientID)
-			if err != nil {
-				m.message = fmt.Sprintf("Error loading client: %v", err)
-				m.isError = true
-				return m, nil
-			}
-			
-			// TODO: These should be configurable
-			fromName := "Your Company Name"
-			fromAddress := "123 Main St, City, Country"
-			fromEmail := "billing@yourcompany.com"
-			
-			err = export.ExportInvoiceToPDF(m.invoice, client, fromName, fromAddress, fromEmail)
-			if err != nil {
-				m.message = fmt.Sprintf("Error exporting PDF: %v", err)
-				m.isError = true
-			} else {
-				exportPath := export.GetExportPath(m.invoice)
-				m.message = fmt.Sprintf("Invoice exported to: %s", exportPath)
-				m.isError = false
-			}
-			return m, nil
+			// Switch to export location mode
+			m.mode = invoiceDetailModeExportLocation
+			m.exportLocationModel = NewExportLocationModel(m.invoice.Number)
+			return m, m.exportLocationModel.Init()
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width - 4
@@ -71,10 +76,62 @@ func (m InvoiceDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.width = 100
 		}
 	}
+	
 	return m, nil
 }
 
+func (m InvoiceDetailModel) updateExportLocation(msg tea.Msg) (tea.Model, tea.Cmd) {
+	switch msg := msg.(type) {
+	case ExportLocationSelectedMsg:
+		// Export to selected location
+		client, err := m.storage.GetClient(m.invoice.ClientID)
+		if err != nil {
+			m.message = fmt.Sprintf("Error loading client: %v", err)
+			m.isError = true
+			m.mode = invoiceDetailModeView
+			return m, nil
+		}
+		
+		// Get template path
+		templatePath := filepath.Join(m.config.TemplatesDir(), "invoice.tex")
+		
+		err = export.ExportInvoiceToPDF(m.invoice, client, m.config, msg.Path, templatePath)
+		if err != nil {
+			m.message = fmt.Sprintf("Error exporting PDF: %v", err)
+			m.isError = true
+		} else {
+			exportPath := export.GetExportPath(m.invoice, msg.Path)
+			m.message = fmt.Sprintf("Invoice exported to: %s", exportPath)
+			m.isError = false
+		}
+		m.mode = invoiceDetailModeView
+		return m, nil
+		
+	case CancelExportMsg:
+		// Cancel export and go back to view mode
+		m.mode = invoiceDetailModeView
+		return m, nil
+		
+	default:
+		// Pass through to export location model
+		var cmd tea.Cmd
+		model, cmd := m.exportLocationModel.Update(msg)
+		m.exportLocationModel = model.(ExportLocationModel)
+		return m, cmd
+	}
+}
+
 func (m InvoiceDetailModel) View() string {
+	switch m.mode {
+	case invoiceDetailModeView:
+		return m.viewDetail()
+	case invoiceDetailModeExportLocation:
+		return m.exportLocationModel.View()
+	}
+	return ""
+}
+
+func (m InvoiceDetailModel) viewDetail() string {
 	var s strings.Builder
 	
 	titleBlock := titleStyle.Render(fmt.Sprintf("Invoice %s", m.invoice.Number))

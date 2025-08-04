@@ -1,0 +1,80 @@
+\documentclass[12pt]{article}
+\usepackage[a4paper,margin=1in]{geometry}
+\usepackage{tabularx}
+\usepackage{graphicx}
+\usepackage{array}
+\usepackage{lastpage}
+\usepackage{fancyhdr}
+\usepackage{titling}
+
+% Header and footer setup
+\pagestyle{fancy}
+\fancyhf{}
+\rhead{Invoice \#2025-002}
+\lhead{Yash Vesikar}
+
+\setlength{\parindent}{0pt}
+\setlength{\parskip}{1em}
+
+\begin{document}
+
+\begin{center}
+    \Huge\bfseries Invoice
+\end{center}
+
+\vspace{1cm}
+
+\textbf{From:}\\
+Yash Vesikar \\
+762 Hayes St. Unit 45 \\
+Seattle, WA 98109 \\
+yash@vesikar.com
+
+\vspace{0.5cm}
+
+\textbf{To:}\\
+Tyler Grosz \\
+TGR Technologies \\
+5163 Alhama Dr. \\
+Woodland Hills, CA 91364
+
+\vspace{0.5cm}
+
+\textbf{Invoice Number:} 2025-002 \\
+\textbf{Date:} \today \\
+\textbf{Due Date:} July 31, 2025 \\
+\textbf{Service Dates:} June 1 – June 30, 2025
+
+\vspace{1cm}
+
+\begin{tabularx}{\textwidth}{|>{\raggedright\arraybackslash}X|r|r|r|}
+    \hline
+    \textbf{Description} & \textbf{Rate} & \textbf{Hours} & \textbf{Amount} \\
+    \hline
+    Demo Development & \$130.00 & 20.25 & \$2,632.50 \\
+    \hline
+    \multicolumn{3}{|r|}{\textbf{Subtotal}} & \$2,632.50 \\
+    \hline
+    \multicolumn{3}{|r|}{\textbf{Total Due}} & \textbf{\$2,632.50} \\
+    \hline
+\end{tabularx}
+
+\vspace{1cm}
+
+\textbf{Payment Instructions:} \\
+Venmo: @yashvesikar \\
+Zelle: \hspace{0.6em} yash@vesikar.com \\
+
+For wire transfers: \\ 
+Account No: 567273500 \\ 
+Routing No: 021000021 \\
+
+For additional payment options, please email yash@vesikar.com
+
+\vfill
+
+\centering
+{\itshape Cheers!}
+
+\end{document}
+

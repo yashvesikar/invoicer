@@ -2,6 +2,7 @@ package ui
 
 import (
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/user/invoicer/config"
 	"github.com/user/invoicer/models"
 )
 
@@ -10,12 +11,14 @@ type menuChoice int
 const (
 	menuClients menuChoice = iota
 	menuInvoices
+	menuSettings
 	menuExit
 )
 
 var menuItems = []string{
 	"Manage Clients",
 	"Manage Invoices",
+	"Settings",
 	"Exit",
 }
 
@@ -23,11 +26,13 @@ type MainMenuModel struct {
 	cursor  int
 	choice  menuChoice
 	storage models.Storage
+	config  *config.Config
 }
 
-func NewMainMenuModel(storage models.Storage) MainMenuModel {
+func NewMainMenuModel(storage models.Storage, cfg *config.Config) MainMenuModel {
 	return MainMenuModel{
 		storage: storage,
+		config:  cfg,
 	}
 }
 
@@ -53,9 +58,11 @@ func (m MainMenuModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.choice = menuChoice(m.cursor)
 			switch m.choice {
 			case menuClients:
-				return NewClientListModel(m.storage), nil
+				return NewClientListModel(m.storage, m.config), nil
 			case menuInvoices:
-				return NewInvoiceListModel(m.storage), nil
+				return NewInvoiceListModel(m.storage, m.config), nil
+			case menuSettings:
+				return NewSettingsModel(m.storage, m.config), nil
 			case menuExit:
 				return m, tea.Quit
 			}
