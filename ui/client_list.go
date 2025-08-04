@@ -134,9 +134,13 @@ func (m ClientListModel) View() string {
 		
 		for i, client := range m.clients {
 			row := ""
+			email := ""
+			if len(client.Emails) > 0 {
+				email = client.Emails[0]
+			}
 			cells := []string{
 				truncate(client.Name, widths[0]-2),
-				truncate(client.Email, widths[1]-2),
+				truncate(email, widths[1]-2),
 				truncate(client.Address, widths[2]-2),
 			}
 			

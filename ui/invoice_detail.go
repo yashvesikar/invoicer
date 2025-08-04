@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/user/invoicer/export"
 	"github.com/user/invoicer/models"
 )
 
@@ -13,6 +14,8 @@ type InvoiceDetailModel struct {
 	invoice *models.Invoice
 	storage models.Storage
 	width   int
+	message string
+	isError bool
 }
 
 func NewInvoiceDetailModel(storage models.Storage, invoice *models.Invoice) InvoiceDetailModel {
@@ -37,6 +40,30 @@ func (m InvoiceDetailModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return NewInvoiceListModel(m.storage), func() tea.Msg { return BackToInvoiceListMsg{} }
 		case "e":
 			return NewInvoiceFormModel(m.storage, m.invoice), nil
+		case "p":
+			// Export to PDF
+			client, err := m.storage.GetClient(m.invoice.ClientID)
+			if err != nil {
+				m.message = fmt.Sprintf("Error loading client: %v", err)
+				m.isError = true
+				return m, nil
+			}
+			
+			// TODO: These should be configurable
+			fromName := "Your Company Name"
+			fromAddress := "123 Main St, City, Country"
+			fromEmail := "billing@yourcompany.com"
+			
+			err = export.ExportInvoiceToPDF(m.invoice, client, fromName, fromAddress, fromEmail)
+			if err != nil {
+				m.message = fmt.Sprintf("Error exporting PDF: %v", err)
+				m.isError = true
+			} else {
+				exportPath := export.GetExportPath(m.invoice)
+				m.message = fmt.Sprintf("Invoice exported to: %s", exportPath)
+				m.isError = false
+			}
+			return m, nil
 		}
 	case tea.WindowSizeMsg:
 		m.width = msg.Width - 4
@@ -144,7 +171,16 @@ func (m InvoiceDetailModel) View() string {
 	totalStyle := summaryStyle.Copy().Bold(true)
 	s.WriteString(totalStyle.Render(fmt.Sprintf("Total: $%.2f", m.invoice.Total.InexactFloat64())) + "\n")
 	
-	s.WriteString("\n" + helpStyle.Render("e edit • esc back • q quit"))
+	if m.message != "" {
+		s.WriteString("\n")
+		if m.isError {
+			s.WriteString(errorStyle.Render(m.message) + "\n")
+		} else {
+			s.WriteString(successStyle.Render(m.message) + "\n")
+		}
+	}
+	
+	s.WriteString("\n" + helpStyle.Render("e edit • p export PDF • esc back • q quit"))
 	
 	return appStyle.Render(s.String())
 }
